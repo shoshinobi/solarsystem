@@ -5,6 +5,12 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js'
 import gsap from 'gsap'
 import { GUI } from 'lil-gui'
+// import compositor
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
+import { CameraHelper } from 'three'
+
 
 
 
@@ -56,6 +62,64 @@ window.addEventListener('resize', () => {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
 })
 
+/*-------------------------------- Background ------------------------------*/
+
+const cubeTextureLoader = new THREE.CubeTextureLoader();
+const backgroundTexture = cubeTextureLoader.load([
+    './tex/stars.jpg',
+    './tex/stars.jpg',
+    './tex/stars.jpg',
+    './tex/stars.jpg',
+    './tex/stars.jpg',
+    './tex/stars.jpg',
+])
+scene.background = backgroundTexture
+
+
+/*================================ Characters ==============================*/
+
+// Sun
+const sunGeo = new THREE.SphereGeometry(16, 32 , 32)
+const sunMat = new THREE.MeshBasicMaterial({map: sunTex})
+const sun = new THREE.Mesh(sunGeo, sunMat)
+scene.add(sun)
+
+// Mars
+const mars = createPlanet(3, marsTex, 40)
+
+const earth = createPlanet(3, earthTex, 60)
+const uranus = createPlanet(3, uranusTex, 140, {innerRad: 3.5, outerRad: 4.5, tex: uranusRingTex})
+const jupiter = createPlanet(10, jupiterTex, 100)
+
+// Saturn
+const saturn = createPlanet(8, saturnTex, 140, {
+    innerRad: 10,
+    outerRad: 20,
+    tex: saturnRingTex
+})
+
+
+function createPlanet(size, tex, position, ring) {
+    const planetOrbit = new THREE.Object3D()
+    scene.add(planetOrbit)
+    const planetGeo = new THREE.SphereGeometry(size, 32 , 32)
+    const planetMat = new THREE.MeshStandardMaterial({map: tex})
+    const planetMesh = new THREE.Mesh(planetGeo, planetMat)
+    planetOrbit.add(planetMesh)
+    planetMesh.position.set(position, 0, 0)
+    
+    if (ring) {
+        const ringGeo = new THREE.RingGeometry(ring.innerRad, ring.outerRad, 32)
+        const ringMat = new THREE.MeshStandardMaterial({map: ring.tex, side: THREE.DoubleSide})
+        const ringMesh = new THREE.Mesh(ringGeo, ringMat)
+        ringMesh.rotation.x = Math.PI * 0.5
+        planetMesh.add(ringMesh)
+    }
+
+    return {mesh: planetMesh, orbit: planetOrbit}
+}
+
+
 /*-------------------------------- Camera ------------------------------*/
 
 
@@ -72,7 +136,9 @@ controls.enableDamping = true
 
 const renderer = new THREE.WebGLRenderer({
     canvas: canvas,
-    antialias: true
+    antialias: true,
+
+
 })
 renderer.setSize(sizes.width, sizes.height)
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
@@ -84,55 +150,23 @@ scene.add(ambientLight)
 const sunLight = new THREE.PointLight(0xffffff, 2, 300)
 scene.add(sunLight)
 
-/*-------------------------------- Background ------------------------------*/
-
-const cubeTextureLoader = new THREE.CubeTextureLoader();
-const backgroundTexture = cubeTextureLoader.load([
-    './tex/stars.jpg',
-    './tex/stars.jpg',
-    './tex/stars.jpg',
-    './tex/stars.jpg',
-    './tex/stars.jpg',
-    './tex/stars.jpg',
-])
-scene.background = backgroundTexture
 
 
 
-/*================================ Characters ==============================*/
-
-// Sun
-const sunGeo = new THREE.SphereGeometry(16, 32 , 32)
-const sunMat = new THREE.MeshBasicMaterial({map: sunTex})
-const sun = new THREE.Mesh(sunGeo, sunMat)
-scene.add(sun)
-
-// Mars
-const marsOrbit = new THREE.Object3D()
-scene.add(marsOrbit)
-const marsGeo = new THREE.SphereGeometry(3, 32 , 32)
-const marsMat = new THREE.MeshStandardMaterial({map: marsTex})
-const mars = new THREE.Mesh(marsGeo, marsMat)
-marsOrbit.add(mars)
-mars.position.set(40, 0, 0)
-
-// Saturn
-const saturnOrbit = new THREE.Object3D()
-scene.add(saturnOrbit)
-const saturnGeo = new THREE.SphereGeometry(8, 32 , 32)
-const saturnMat = new THREE.MeshStandardMaterial({map: saturnTex})
-const saturn = new THREE.Mesh(saturnGeo, saturnMat)
-saturnOrbit.add(saturn)
-saturn.position.set(140, 0, 0)
-
-// Saturn ring
-const saturnRingGeo = new THREE.RingGeometry(10, 20, 32)
-const saturnRingMat = new THREE.MeshStandardMaterial({map: saturnRingTex, side: THREE.DoubleSide})
-const saturnRing = new THREE.Mesh(saturnRingGeo, saturnRingMat)
-saturnRing.rotation.x = Math.PI * 0.5
-saturn.add(saturnRing)
 
 
+/*-------------------------------- Effects Compositor ------------------------------*/
+
+const renderScene = new RenderPass(scene, camera)
+const composer = new EffectComposer(renderer)
+composer.addPass(renderScene)
+
+// Bloom Pass
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight))
+bloomPass.strength = 0.4
+bloomPass.radius = 1.75
+bloomPass.threshold = 0.01
+composer.addPass(bloomPass)
 
 
 
@@ -146,20 +180,22 @@ const tick = () => {
     
     // Animation
     sun.rotation.y = elapsedTime * 0.1
-    marsOrbit.rotation.y = elapsedTime * 0.3
-    mars.rotation.y = elapsedTime * 0.4
-    saturnOrbit.rotation.y = elapsedTime * 0.05
-    saturn.rotation.y = elapsedTime * -0.3
-    
-    
-    
-    
-    
-    
-    
+    mars.orbit.rotation.y = elapsedTime * 0.5
+    mars.mesh.rotation.y = elapsedTime * 0.4
+    saturn.orbit.rotation.y = elapsedTime * 0.05
+    saturn.mesh.rotation.y = elapsedTime * -0.3
+    jupiter.orbit.rotation.y = elapsedTime * 0.1
+    jupiter.mesh.rotation.y = elapsedTime * -0.7
+    uranus.orbit.rotation.y = elapsedTime * 0.2
+    uranus.mesh.rotation.y = elapsedTime * 0.3
+    earth.orbit.rotation.y = elapsedTime * 0.5
+    earth.mesh.rotation.y = elapsedTime * 0.3
+
     
     controls.update()
-    renderer.render(scene, camera)
+
+    //renderer.render(scene, camera)
+    composer.render()
     window.requestAnimationFrame(tick)
 }
 tick()
